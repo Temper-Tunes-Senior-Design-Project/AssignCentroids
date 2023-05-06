@@ -52,10 +52,12 @@ def assignCentroids(request): #songs, user_id
     addTrackMoodToDB(predictions)
     #combine arrays
     all_songs_labels = {**known_track_moods_dict, **predictions}
+    #upload user songs to DB
+    uploadUserSongList(user_id, all_songs_labels.keys())
     #calculate centroids
     centroids = classifyCentroids(all_songs_labels, track_data)
     #upload centroids to user's DB
-    uploadCentroidsToDB(centroids, user_id)
+    uploadCentroidsToDB(user_id, centroids)
     #return 200 status 
     return (jsonify({"result": "success"}), 200)
 
@@ -71,7 +73,7 @@ def assignLabels(song_ids):
     features_df = retrieveTrackFeatures(song_ids)
     processed_features_df = clipAndNormalizeMLP(features_df)
     if processed_features_df.shape[0] == 0:
-        return {"error": "None of the songs passed were found. Either Spotify is down, or the song ids are incorrect"}
+        return ({"error": "None of the songs passed were found. Either Spotify is down, or the song ids are incorrect"},)
     pred, _ = getMoodLabelMLP(processed_features_df)
     for i, (key, row) in enumerate(features_df.iterrows()):
         predictions[key]=pred[i]
@@ -112,10 +114,6 @@ def load_mlp_model():
 # Classify Centroids
 #______________________________________________
 moods = ['sad','angry','energetic','excited','happy','content','calm','depressed'] #Represents DB indexing of moods
-
-#--------------------
-# Calculate Centroids
-#--------------------
 centroid_features_MLP = ['danceability', 'energy', 'key', 'loudness', 'mode', 'speechiness', 
                         'acousticness','instrumentalness', 'liveness', 'valence', 'tempo', 
                         'duration_ms', 'time_signature']
@@ -176,7 +174,14 @@ def addTrackMoodToDB(tracks_dict):
             'mood': int(mood)
         })
 
-def uploadCentroidsToDB(centroids, user_id):
+def uploadUserSongList(user_id, songs):
+    # Define the user document reference
+    user_doc_ref = db.collection('users').document(user_id)
+    # Update the classifiedSongs field with the new list of songs
+    user_doc_ref.update({'classifiedSongs': songs})
+    
+
+def uploadCentroidsToDB(user_id, centroids):
     # Loop through each mood in the centroids dictionary
     for mood, scores in centroids.items():
         # Define the document reference for the current mood
