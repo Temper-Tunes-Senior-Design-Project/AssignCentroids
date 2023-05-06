@@ -37,25 +37,45 @@ def assignCentroids(request): #songs, user_id
     else:
         return (jsonify({"error":"Bad Input, must pass 'songs' list, and 'user_id'"}), 400)
 
+    #initialize creds
+    global sp
+    if sp == None:
+        spotify_client()
+        firestoreConnection()
+
     #Get known song_ids
     #Split ids by whether they are already labelled or not
     known_track_moods_dict = getAlreadyLabelled(songs)
     new_song_ids = [song_id for song_id in songs if song_id not in known_track_moods_dict.keys()]
     # Get song features of the new ids
     features_df = retrieveTrackFeatures(new_song_ids)
-    processed_features_df = clipAndNormalizeMLP(features_df)
-    if processed_features_df.shape[0] == 0 and len(known_track_moods_dict.keys()) == 0:
-        return jsonify({"error": "Issue with spotify server"})
-    #assign unknown songs
-    (predictions, track_data) = assignLabels(new_song_ids)
-    #upload unknown song predictions to DB
-    addTrackMoodToDB(predictions)
-    #combine arrays
-    all_songs_labels = {**known_track_moods_dict, **predictions}
+    track_data = {}
+    if features_df is not None:
+        processed_features_df = clipAndNormalizeMLP(features_df)
+        if processed_features_df.shape[0] == 0 and len(known_track_moods_dict.keys()) == 0:
+            return jsonify({"error": "Issue with spotify server"})
+        #assign unknown songs
+        (predictions, track_data) = assignLabels(new_song_ids)
+        #upload unknown song predictions to DB
+        addTrackMoodToDB(predictions)
+        #combine arrays
+        all_songs_labels = {**known_track_moods_dict, **predictions}
+    else:
+        all_songs_labels = known_track_moods_dict
+    #retrieve track features for known track moods
+    known_features_df = retrieveTrackFeatures(list(known_track_moods_dict.keys()))
+    known_track_data = {}
+    if known_features_df is not None: 
+        processed_known_features_df = clipAndNormalizeMLP(known_features_df)
+        known_track_data = processed_known_features_df.to_dict(orient='index')
+        for key, value in known_track_data.items():
+            known_track_data[key] = list(value.values())
+    combined_track_data = {**known_track_data, **track_data}
+
     #upload user songs to DB
-    uploadUserSongList(user_id, all_songs_labels.keys())
+    uploadUserSongList(user_id, list(all_songs_labels.keys()))
     #calculate centroids
-    centroids = classifyCentroids(all_songs_labels, track_data)
+    centroids = classifyCentroids(all_songs_labels, combined_track_data)
     #upload centroids to user's DB
     uploadCentroidsToDB(user_id, centroids)
     #return 200 status 
@@ -71,11 +91,12 @@ def assignLabels(song_ids):
     track_data = {}
     # Use Spotipy to retrieve track information
     features_df = retrieveTrackFeatures(song_ids)
+    if features_df is None: return ({}, {})
     processed_features_df = clipAndNormalizeMLP(features_df)
     if processed_features_df.shape[0] == 0:
         return ({"error": "None of the songs passed were found. Either Spotify is down, or the song ids are incorrect"},)
     pred, _ = getMoodLabelMLP(processed_features_df)
-    for i, (key, row) in enumerate(features_df.iterrows()):
+    for i, (key, row) in enumerate(processed_features_df.iterrows()):
         predictions[key]=pred[i]
         data = row.values.reshape(1,-1)
         track_data[key] = list(data[0])
@@ -214,7 +235,7 @@ def retrieveTrackFeatures(track_ids):
 
             # Append to list of dataframes
             dfs.append(df)
-    
+    if len(dfs) == 0: return None
     # Concatenate all dataframes into a single one
     features_df = pd.concat(dfs, ignore_index=True)
     features_df.set_index("id", inplace=True)
