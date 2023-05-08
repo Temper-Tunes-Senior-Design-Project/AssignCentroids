@@ -79,6 +79,12 @@ def assignCentroids(request): #songs, user_id
     centroids = classifyCentroids(all_songs_labels, combined_track_data)
     #upload centroids to user's DB
     uploadCentroidsToDB(user_id, centroids)
+    #upload stats to user's DB
+    counts = {mood:0 for mood in moods}
+    for label in all_songs_labels.values():
+        mood = moods[label]
+        counts[mood] += 1
+    uploadCountsToDB(user_id, counts)
     #return 200 status 
     return (jsonify({"result": "success"}), 200)
 
@@ -210,6 +216,10 @@ def uploadCentroidsToDB(user_id, centroids):
         mood_doc_ref = db.collection('users').document(user_id).collection('centroids').document(mood)
         # Upload the scores to the document
         mood_doc_ref.set(scores)
+
+def uploadCountsToDB(user_id, counts):
+    user_doc_ref = db.collection('users').document(user_id)
+    user_doc_ref.update({"statistics": counts})
     
 #______________________________________________
 # MLP Model Classifcation
