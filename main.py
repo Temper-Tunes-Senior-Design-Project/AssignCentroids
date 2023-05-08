@@ -32,7 +32,7 @@ def add_cors_headers(response):
 def assignCentroids(request): #songs, user_id
     request_json = request.get_json(silent=True)
     if request_json and all(k in request_json for k in ("songs","user_id")):
-        songs = request_json["songs"]
+        song_list = request_json["songs"]
         user_id = request_json["user_id"]
     else:
         return (jsonify({"error":"Bad Input, must pass 'songs' list, and 'user_id'"}), 400)
@@ -45,6 +45,7 @@ def assignCentroids(request): #songs, user_id
 
     #Get known song_ids
     #Split ids by whether they are already labelled or not
+    songs = [song.strip() for song in song_list if len(song.strip()) > 0]
     known_track_moods_dict = getAlreadyLabelled(songs)
     new_song_ids = [song_id for song_id in songs if song_id not in known_track_moods_dict.keys()]
     # Get song features of the new ids
